@@ -24,6 +24,12 @@ parser.add_argument(
     type=str,
     help="Name or path of the model. If not set, the default model will request /v1/models for conf.",
 )
+parser.add_argument(
+    "--tokenizer",
+    type=str,
+    help="Name or path of the tokenizer. If not set, the default tokenizer will use model value,"
+         "if model start with a pathlike str.",
+)
 
 parser.add_argument(
     "--dataset-path", type=str, default="", help="Path to the dataset."
@@ -38,7 +44,7 @@ args = argparse.Namespace(
     host="0.0.0.0",
     port=8000,
     base_url=None,
-    tokenizer=None,
+    tokenizer=in_args.tokenizer or in_args.model if in_args.model.startswith("/") else "/root/.cache/huggingface/DeepSeek-R1",   # 分词器用来做token长度计算
     model=in_args.model or "/root/.cache/huggingface/DeepSeek-R1",
     random_range_ratio=0.1,
     request_rate=float("inf"),
