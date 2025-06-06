@@ -48,6 +48,8 @@ parser.add_argument(
     help="Name or path of the model. If not set, the default model will request /v1/models for conf.",
 )
 parser.add_argument(
+        "--host", type=str, default="0.0.0.0", help="Default host is 0.0.0.0.")
+parser.add_argument(
     "--port",
     type=str,
     help="If not set, the default port is configured according to its default value for different LLM Inference Engines.",
@@ -75,7 +77,7 @@ args = argparse.Namespace(
     backend=in_args.backend,
     dataset_name="random",
     dataset_path=in_args.dataset_path or "/root/.cache/huggingface/ShareGPT_V3_unfiltered_cleaned_split.json",
-    host="0.0.0.0",
+    host=in_args.host,
     port=in_args.port or 8000,
     base_url=None,
     tokenizer=in_args.tokenizer or in_args.model if in_args.model and in_args.model.startswith("/") else "/root/.cache/huggingface/DeepSeek-R1",   # 分词器用来做token长度计算
