@@ -42,6 +42,7 @@ def ibstat_ports():
                 lid = ibstat[index + 4].split(':')[1].strip()
 
                 nic_str = re.match("CA \'([a-zA-Z0-9]+)\'", ibstat[index - 7])
+                nic = None
                 if nic_str:
                     nic = nic_str.group(1)
 
