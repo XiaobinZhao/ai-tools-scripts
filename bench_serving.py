@@ -120,6 +120,13 @@ async def async_request_chat_completions(
 
     prompt = request_func_input.prompt
 
+    # force set stream_options.include_usage is true
+    if "stream_options" in request_func_input.extra_request_body.keys():
+        if "include_usage" not in request_func_input.extra_request_body["stream_options"].keys():
+            request_func_input.extra_request_body["stream_options"]["include_usage"] = True
+    else:
+        request_func_input.extra_request_body["stream_options"] = {"include_usage": True}
+
     async with _create_bench_client_session() as session:
         payload = {
             "model": request_func_input.model,
@@ -131,7 +138,7 @@ async def async_request_chat_completions(
             # "best_of": 1,
             "max_tokens": request_func_input.output_len,
             "stream": not args.disable_stream,
-            "ignore_eos": not args.disable_ignore_eos,
+            # "ignore_eos": not args.disable_ignore_eos,
             **request_func_input.extra_request_body,
         }
         headers = get_auth_headers()
@@ -744,7 +751,7 @@ ASYNC_REQUEST_FUNCS = {
     "gserver": async_request_gserver,
     "truss": async_request_truss,
     "tx": async_request_tx_completions,
-    "chat": async_request_tx_completions,
+    "chat": async_request_chat_completions,
 }
 
 
