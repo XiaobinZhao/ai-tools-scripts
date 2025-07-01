@@ -47,21 +47,25 @@ def extract_prompts_from_logs(log_dir, mode="dataset"):
                 for line in file:
                     # (?<!\\) 是一个负向零宽断言（negative lookbehind），表示匹配的位置前面不能有反斜杠（\）。
                     # 匹配单引号中的内容, 忽略转义字符,包含匹配的换行符
-                    match = re.findall(r"(?<!\\)prompt: '(.*?)(?<!\\)', params: SamplingParams", line, re.DOTALL)
-                    if not match:
+                    match_prompt = re.findall(r"(?<!\\)prompt: '(.*?)(?<!\\)', params: SamplingParams", line, re.DOTALL)
+                    prompt_max_tokens = re.findall(r"ignore_eos=.*, max_tokens=(\d+), min_tokens=", line)
+
+                    if not match_prompt:
                         continue
 
-                    full_prompt = match[0]
+                    full_prompt = match_prompt[0]
 
                     if mode == "prompt":
                         all_conversations.append({
                             "id": str(conversations_index).zfill(5),  # 使用随机生成的 10 位字符串替换 uuid
-                            "prompt": full_prompt
+                            "prompt": full_prompt,
+                            "max_tokens": int(prompt_max_tokens[0]) if prompt_max_tokens else None
                         })
                     else:
                         all_conversations.append({
                             "id": str(conversations_index).zfill(5),  # 使用随机生成的 10 位字符串替换 uuid
-                            "conversations": format_conversations(full_prompt)
+                            "conversations": format_conversations(full_prompt),
+                            "max_tokens": int(prompt_max_tokens[0]) if prompt_max_tokens else None
                         })
 
                     conversations_index += 1

@@ -109,6 +109,92 @@ def get_auth_headers() -> Dict[str, str]:
         return {}
 
 
+async def async_request_chat_completions(
+    request_func_input: RequestFuncInput,
+    pbar: Optional[tqdm] = None,
+) -> RequestFuncOutput:
+    api_url = request_func_input.api_url
+    assert api_url.endswith(
+        "completions"
+    ), "OpenAI Completions API URL must end with 'completions'."
+
+    prompt = request_func_input.prompt
+
+    async with _create_bench_client_session() as session:
+        payload = {
+            "model": request_func_input.model,
+            # "prompt": prompt,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.0,
+            # "best_of": 1,
+            "max_tokens": request_func_input.output_len,
+            "stream": not args.disable_stream,
+            "ignore_eos": not args.disable_ignore_eos,
+            **request_func_input.extra_request_body,
+        }
+        headers = get_auth_headers()
+
+        output = RequestFuncOutput.init_new(request_func_input)
+
+        generated_text = ""
+        output_len = request_func_input.output_len
+        ttft = 0.0
+        st = time.perf_counter()
+        most_recent_timestamp = st
+        try:
+            async with session.post(
+                url=api_url, json=payload, headers=headers
+            ) as response:
+                if response.status == 200:
+                    async for chunk_bytes in response.content:
+                        chunk_bytes = chunk_bytes.strip()
+                        if not chunk_bytes:
+                            continue
+
+                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                        latency = time.perf_counter() - st
+                        if chunk == "[DONE]":
+                            pass
+                        else:
+                            data = json.loads(chunk)
+
+                            # NOTE: Some completion API might have a last
+                            # usage summary response without a token so we
+                            # want to check a token was generated
+                            if data["choices"] and data["choices"][0].get("delta", None) and data["choices"][0]["delta"].get("content", None):
+                                timestamp = time.perf_counter()
+                                # First token
+                                if ttft == 0.0:
+                                    ttft = time.perf_counter() - st
+                                    output.ttft = ttft
+
+                                # Decoding phase
+                                else:
+                                    output.itl.append(timestamp - most_recent_timestamp)
+
+                                most_recent_timestamp = timestamp
+                                generated_text += data["choices"][0]["delta"]["content"]
+                                output_len = (data.get("usage") or {}).get("completion_tokens", output_len)
+
+                    output.generated_text = generated_text
+                    output.success = True
+                    output.latency = latency
+                    output.output_len = output_len
+                else:
+                    output.error = response.reason or ""
+                    output.success = False
+        except Exception:
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+
+    if pbar:
+        pbar.update(1)
+    return output
+
+
 async def async_request_tx_completions(
     request_func_input: RequestFuncInput,
     pbar: Optional[tqdm] = None,
@@ -640,8 +726,8 @@ def get_dataset(args, tokenizer):
             dataset_path=args.dataset_path,
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
-            fixed_output_len=args.sharegpt_output_len,
-            context_len=args.sharegpt_context_len
+            context_len=args.sharegpt_context_len,
+            fixed_output_len=args.sharegpt_output_len
         )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
@@ -658,6 +744,7 @@ ASYNC_REQUEST_FUNCS = {
     "gserver": async_request_gserver,
     "truss": async_request_truss,
     "tx": async_request_tx_completions,
+    "chat": async_request_tx_completions,
 }
 
 
@@ -759,17 +846,15 @@ def sample_tx_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
-    fixed_output_len: Optional[int] = 1,
     context_len: Optional[int] = None,
+    fixed_output_len: Optional[int] = None
 ) -> List[DatasetRow]:
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
 
     # Load the dataset.
     with open(dataset_path) as f:
-        _dataset = json.load(f)
-
-    dataset = [data.get("conversations", []) for data in _dataset]
+        dataset = json.load(f)
 
     # Shuffle the dataset.
     random.shuffle(dataset)
@@ -780,20 +865,21 @@ def sample_tx_requests(
         if len(filtered_dataset) == num_requests:
             break
 
-        prompt = dataset[i]
+        ori_prompt = dataset[i]["conversations"]
+        ori_max_tokens = fixed_output_len or dataset[i]["max_tokens"]  # 优先取用固定长度，否则取数据集长度
 
-        prompt = tokenizer.apply_chat_template(prompt, add_generation_prompt=True, tokenize=False)
+        prompt = tokenizer.apply_chat_template(ori_prompt, add_generation_prompt=True, tokenize=False)
         prompt = prompt.replace(tokenizer.bos_token, "")
 
         prompt_token_ids = tokenizer.encode(prompt)
         prompt_len = len(prompt_token_ids)
 
-        if context_len and prompt_len + fixed_output_len > context_len:
-            # Prune too long sequences.
+        if context_len and prompt_len + ori_max_tokens > context_len:
+            print(f"Warning prompt_len + max_tokens > context_len: prompt_len={prompt_len}, max_tokens={ori_max_tokens}, context_len={context_len}")
             continue
 
         filtered_dataset.append(
-            DatasetRow(prompt=dataset[i], prompt_len=prompt_len, output_len=fixed_output_len)
+            DatasetRow(prompt=ori_prompt, prompt_len=prompt_len, output_len=ori_max_tokens)
         )
 
     print(f"#Input tokens: {np.sum([x.prompt_len for x in filtered_dataset])}")
@@ -1363,7 +1449,7 @@ async def benchmark(
         prompt=test_request.prompt,
         api_url=api_url,
         prompt_len=test_request.prompt_len,
-        output_len=min(test_request.output_len, 32),
+        output_len=min(test_request.output_len, 32) if test_request.output_len else 32,
         lora_name=lora_name,
         image_data=test_request.image_data,
         extra_request_body=extra_request_body,
@@ -1444,19 +1530,20 @@ async def benchmark(
     if pbar is not None:
         pbar.close()
 
-    if "sglang" in backend:
-        server_info = requests.get(base_url + "/get_server_info")
-        if server_info.status_code == 200:
-            server_info_json = server_info.json()
-            if "decode" in server_info_json:
-                server_info_json = server_info_json["decode"][0]
-            accept_length = server_info_json["internal_states"][0].get(
-                "avg_spec_accept_length", None
-            )
-        else:
-            accept_length = None
-    else:
-        accept_length = None
+    # if "sglang" in backend:
+    #     server_info = requests.get(base_url + "/get_server_info")
+    #     if server_info.status_code == 200:
+    #         server_info_json = server_info.json()
+    #         if "decode" in server_info_json:
+    #             server_info_json = server_info_json["decode"][0]
+    #         accept_length = server_info_json["internal_states"][0].get(
+    #             "avg_spec_accept_length", None
+    #         )
+    #     else:
+    #         accept_length = None
+    # else:
+    #     accept_length = None
+    accept_length = None
 
     # Compute metrics and print results
     benchmark_duration = time.perf_counter() - benchmark_start_time
@@ -1712,6 +1799,12 @@ def run_benchmark(args_: argparse.Namespace):
             if args.base_url
             else f"http://{args.host}:{args.port}/v1/chat/completions"
         )
+    elif args.backend == "chat":
+        api_url = (
+            f"{args.base_url}/v1/chat/completions"
+            if args.base_url
+            else f"http://{args.host}:{args.port}/v1/chat/completions"
+        )
     base_url = (
         f"http://{args.host}:{args.port}" if args.base_url is None else args.base_url
     )
@@ -1738,7 +1831,7 @@ def run_benchmark(args_: argparse.Namespace):
         print("No model specified or found. Please provide a model using `--model`.")
         sys.exit(1)
 
-    if not check_chat_template(args.model):
+    if not check_chat_template(args.tokenizer if args.tokenizer is not None else args.model):
         print(
             "\nWARNING It is recommended to use the `Chat` or `Instruct` model for benchmarking.\n"
             "Because when the tokenizer counts the output tokens, if there is gibberish, it might count incorrectly.\n"

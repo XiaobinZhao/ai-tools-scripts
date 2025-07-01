@@ -23,11 +23,23 @@ params = {
         "num_prompts": [50, 50, 64, 96, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896, 1024, 1280, 1536, 1792, 1024, 2048],
         "random_range_ratio": 0.1
     },
-    # 转为腾讯测试使用
+    # 专为腾讯测试使用
     "tx": {
         "input_output_pairs": [(6000, 1000)],
         "concurrency_values": [1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200],
         "num_prompts": [50, 50, 50, 60, 60, 80, 100,  120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340, 360, 380, 400],
+        "random_range_ratio": 1
+    },
+    # 专为火山测试使用
+    # 火山测试的文档 https://www.volcengine.com/docs/6459/1462763#sglang%E7%9A%84%E6%B5%8B%E8%AF%95%E6%96%B9%E6%B3%95
+    # declare -a request_rates=(1 4 8 16 32 48 64 80 128 160)
+    # declare -a max_concurrency=(1 4 8 16 32 48 64 80 128 160)
+    # declare -a num_prompts=(4 16 32 64 128 192 256 320 512 640)
+    "fire": {
+        "input_output_pairs": [(6000, 1000)],
+        "request_rates": [1, 4, 8, 16, 32, 48, 64, 80, 128, 160],
+        "concurrency_values": [1, 4, 8, 16, 32, 48, 64, 80, 128, 160],
+        "num_prompts": [4, 16, 32, 64, 128, 192, 256, 320, 512, 640],
         "random_range_ratio": 1
     }
 }
@@ -39,8 +51,8 @@ parser.add_argument(
     "--mode",
     type=str,
     required=True,
-    choices=["full", "tx"],  # 只允许这两个值
-    help="full is 1024-in/256-out to 2048-in/2048-out and concurrency from 16 to 1024, tx is for tencent test.",
+    choices=["full", "tx", "fire"],  # 只允许这两个值
+    help="full is 1024-in/256-out to 2048-in/2048-out and concurrency from 16 to 1024, tx is for tencent test.fire is for huoshan test",
 )
 parser.add_argument(
     "--model",
@@ -120,6 +132,7 @@ i = 1
 
 input_output_pairs = params[in_args.mode]["input_output_pairs"]
 concurrency_values = params[in_args.mode]["concurrency_values"]
+request_rates_values = params[in_args.mode].get("request_rates", [])
 num_prompts = params[in_args.mode]["num_prompts"]
 
 for input_len, output_len in input_output_pairs:
@@ -130,9 +143,11 @@ for input_len, output_len in input_output_pairs:
         args.random_output_len = output_len
         args.max_concurrency = concurrency
         args.num_prompts = num_prompts[index]
+        if in_args.mode == "fire":
+            args.request_rate = request_rates_values[index]
 
         print(
-            f"\n\n === start benchmark for input_len={input_len}, output_len={output_len}, concurrency={concurrency}, num_prompts={args.num_prompts} === \n\n")
+            f"\n\n === start benchmark for input_len={input_len}, output_len={output_len}, concurrency={concurrency}, request_rate={request_rates_values[index]}, num_prompts={args.num_prompts} === \n\n")
 
         result = run_benchmark(args)  # 调用sglang的run_benchmark函数
 
