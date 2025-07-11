@@ -13,10 +13,12 @@ from zoneinfo import ZoneInfo
 # 需要预先安装sglang
 from sglang.bench_serving import run_benchmark, set_global_args
 
+# 开始时间
+start_time = datetime.now()
 # 定义参数
 params = {
     # 完整random测试参数设置
-    "full": {
+    "default": {
         "input_output_pairs": [(1024, 256), (1024, 1024), (2048, 2048)],
         # 并发值设置,有一个1025的目的是为了实现并发和请求数都是1024的case
         "concurrency_values": [1, 16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896, 1024, 1024],
@@ -35,6 +37,13 @@ params = {
     # declare -a request_rates=(1 4 8 16 32 48 64 80 128 160)
     # declare -a max_concurrency=(1 4 8 16 32 48 64 80 128 160)
     # declare -a num_prompts=(4 16 32 64 128 192 256 320 512 640)
+    # "fire": {
+    #     "input_output_pairs": [(6000, 1000)],
+    #     "request_rates": [1, 4, 8, 16, 30, 30],
+    #     "concurrency_values": [1, 4, 8, 16, 32, 40],
+    #     "num_prompts": [4, 16, 32, 64, 128, 160],
+    #     "random_range_ratio": 1
+    # }
     "fire": {
         "input_output_pairs": [(6000, 1000)],
         "request_rates": [1, 4, 8, 16, 32, 48, 64, 80, 128, 160],
@@ -48,11 +57,31 @@ results = []
 
 parser = ArgumentParser(description="Benchmark the online serving throughput.")
 parser.add_argument(
+    "--engine",
+    type=str,
+    required=True,
+    choices=["SGLang", "TensorRT", "xLLM", "vLLM"],
+    help='one of "SGLang", "TensorRT", "xLLM", "vLLM"',
+)
+parser.add_argument(
+    "--gpu",
+    type=str,
+    required=True,
+    choices=["H20-96G", "H20-141G", "H200", "B200"],
+    help='one of "H20-96G", "H20-141G", "H200", "B200"',
+)
+parser.add_argument(
+    "--cluster",
+    type=str,
+    required=True,
+    help='one of "1Node", "xNodesLB", "xPxD"',
+)
+parser.add_argument(
     "--mode",
     type=str,
     required=True,
-    choices=["full", "tx", "fire"],  # 只允许这两个值
-    help="full is 1024-in/256-out to 2048-in/2048-out and concurrency from 16 to 1024, tx is for tencent test.fire is for huoshan test",
+    choices=["default", "tx", "fire"],  # 只允许这两个值
+    help="default is 1024-in/256-out to 2048-in/2048-out and concurrency from 16 to 1024, tx is for tencent test.fire is for huoshan test",
 )
 parser.add_argument(
     "--model",
@@ -92,7 +121,7 @@ args = argparse.Namespace(
     host=in_args.host,
     port=in_args.port or 8000,
     base_url=None,
-    tokenizer=in_args.tokenizer or in_args.model if in_args.model and in_args.model.startswith("/") else "/root/.cache/huggingface/DeepSeek-R1",   # 分词器用来做token长度计算
+    tokenizer=in_args.tokenizer or (in_args.model if in_args.model and in_args.model.startswith("/") else "/root/.cache/huggingface/DeepSeek-R1"),   # 分词器用来做token长度计算
     model=in_args.model or "/root/.cache/huggingface/DeepSeek-R1",
     random_range_ratio=params[in_args.mode]["random_range_ratio"],
     request_rate=float("inf"),
@@ -127,7 +156,8 @@ set_global_args(args)
 
 # 使用ExcelWriter来逐次写入结果
 current_time = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d_%H-%M-%S")
-output_file = f"batch_{args.dataset_name}_{args.backend}_{in_args.mode}_benchmark_results_{current_time}.xlsx"
+_model_name = in_args.model.split("/")[-1]
+output_file = f"{in_args.engine}_{in_args.gpu}_{in_args.cluster}_{_model_name}_{args.dataset_name}_{args.backend}_{in_args.mode}_benchmark_results_{current_time}.xlsx"
 i = 1
 
 input_output_pairs = params[in_args.mode]["input_output_pairs"]
@@ -147,7 +177,7 @@ for input_len, output_len in input_output_pairs:
             args.request_rate = request_rates_values[index]
 
         print(
-            f"\n\n === start benchmark for input_len={input_len}, output_len={output_len}, concurrency={concurrency}, request_rate={request_rates_values[index]}, num_prompts={args.num_prompts} === \n\n")
+            f"\n\n === start benchmark for input_len={input_len}, output_len={output_len}, concurrency={concurrency}, request_rate={args.request_rate}, num_prompts={args.num_prompts} === \n\n")
 
         result = run_benchmark(args)  # 调用sglang的run_benchmark函数
 
@@ -158,7 +188,9 @@ for input_len, output_len in input_output_pairs:
             "Input len": input_len,
             "Output len": output_len,
             "batch size": args.max_concurrency,
+            "request rate": args.request_rate,
             "requests": args.num_prompts,
+            "failed requests": args.num_prompts - result.get("completed", 0),
             "TTFT(ms)": result["mean_ttft_ms"],
             "TPOT(ms)": result["mean_itl_ms"],
             "Throughput(tokens/s)": total_throughput
@@ -173,3 +205,7 @@ for input_len, output_len in input_output_pairs:
             with pd.ExcelWriter(output_file, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
                 df.to_excel(writer, index=False, header=False, startrow=writer.sheets['Sheet1'].max_row)
                 print(f"save {input_len}_{output_len}_{concurrency}_{args.num_prompts} result to {output_file}")
+
+# 结束时间
+end_time = datetime.now()
+print(f"Total time: {end_time - start_time}")
