@@ -86,6 +86,9 @@ in_args = parser.parse_args()
 _tokenizer = in_args.tokenizer or (in_args.model if in_args.model and in_args.model.startswith("/") else "/root/.cache/huggingface/DeepSeek-R1")
 _model_name = in_args.model.split("/")[-1]
 current_time = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d_%H-%M-%S")
+output_file = f"{in_args.engine}_{in_args.gpu}_{in_args.cluster}_{in_args.benchmark}_{_model_name}_{in_args.dataset_name}_{in_args.backend}_benchmark_results_{current_time}.xlsx"
+
+print(f"=== result will save to: {output_file} ===")
 
 _result_dir = f"logs/{in_args.benchmark}/{in_args.backend}"
 # 创建 logs 目录（如果不存在）
@@ -97,11 +100,9 @@ for i in range(len(max_concurrency)):
     PROMPTS = num_prompts[i]
     SEED = i + 1
 
-    print(
-        f"\n\n --- start benchmark for input_len={INPUT_LEN}, output_len={OUTPUT_LEN}, concurrency={CONCURRENCY}, num_prompts={PROMPTS} --- \n")
+    print(f"\n\n --- start benchmark for input_len={INPUT_LEN}, output_len={OUTPUT_LEN}, concurrency={CONCURRENCY}, num_prompts={PROMPTS} --- \n")
 
     result_file_name_prefix = f"{CONCURRENCY}_{_model_name}_{in_args.dataset_name}_{OUTPUT_LEN}_{current_time}"
-    output_file = f"{in_args.engine}_{in_args.gpu}_{in_args.cluster}_{in_args.benchmark}_{_model_name}_{in_args.dataset_name}_{in_args.backend}_benchmark_results_{current_time}.xlsx"
 
     ksana_cmd = [
         "python", "/workspace/KsanaLLM/benchmarks/benchmark_throughput.py",
@@ -220,8 +221,7 @@ for i in range(len(max_concurrency)):
     else:
         with pd.ExcelWriter(output_file, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
             df.to_excel(writer, index=False, header=False, startrow=writer.sheets['Sheet1'].max_row)
-    print(
-        f"+++ finish benchmark for output_len={OUTPUT_LEN}, concurrency={CONCURRENCY}, num_prompts={PROMPTS}, Total latency={_total_latency}s; save to execl. +++ \n")
+    print(f"+++ finish benchmark for output_len={OUTPUT_LEN}, concurrency={CONCURRENCY}, num_prompts={PROMPTS}, Total latency={_total_latency}s; save to execl. +++ \n")
 
 # 结束时间
 end_time = datetime.now()
