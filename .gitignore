@@ -172,3 +172,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+/tx_bench_dataset.json
+/tx_bench_longtext_dataset.json
+/tx_bench_prompt.json
