@@ -49,6 +49,13 @@ in_params = {
         "concurrency_values": [1, 4, 8, 16, 32, 48, 64, 80, 128, 160],
         "num_prompts": [4, 16, 32, 64, 128, 192, 256, 320, 512, 640],
         "random_range_ratio": 1
+    },
+    "fire3.5": {
+        "input_output_pairs": [(3500, 1000)],
+        "request_rates": [1, 4, 8, 16, 32, 48, 64, 80, 128, 160],
+        "concurrency_values": [1, 4, 8, 16, 32, 48, 64, 80, 128, 160],
+        "num_prompts": [4, 16, 32, 64, 128, 192, 256, 320, 512, 640],
+        "random_range_ratio": 1
     }
 }
 
@@ -60,7 +67,7 @@ parser.add_argument(
     "--mode",
     type=str,
     required=True,
-    choices=["test", "default", "tx", "fire"],  # 只允许这两个值
+    choices=["test", "default", "tx", "fire", "fire3.5"],  # 只允许这两个值
     help="default is 1024-in/256-out to 2048-in/2048-out and concurrency from 16 to 1024, tx is for tencent test.fire is for huoshan test",
 )
 parser.add_argument(
