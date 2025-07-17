@@ -75,63 +75,63 @@ parser.add_argument(
     type=str,
     default="SGLang",
     choices=["SGLang", "TensorRT", "xLLM", "vLLM", "KsanaLLM"],
-    help='one of "SGLang", "TensorRT", "xLLM", "vLLM", "KsanaLLM"',
+    help='one of "SGLang", "TensorRT", "xLLM", "vLLM", "KsanaLLM", default is SGLang',
 )
 parser.add_argument(
     "--benchmark",
     type=str,
     default="SGLang",
     choices=["SGLang", "vLLM", "KsanaLLM"],
-    help='the benchmark script of "SGLang", "vLLM", "KsanaLLM"',
+    help='the benchmark script of "SGLang", "vLLM", "KsanaLLM", default is SGLang',
 )
 parser.add_argument(
     "--gpu",
     type=str,
     default="H200",
     choices=["H20-96G", "H20-141G", "H200", "B200"],
-    help='one of "H20-96G", "H20-141G", "H200", "B200"',
+    help='one of "H20-96G", "H20-141G", "H200", "B200", default is H200',
 )
 parser.add_argument(
     "--cluster",
     type=str,
     default="1Node",
-    help='one of "1Node", "xNodesLB", "xPxD"',
+    help='one of "1Node", "xNodesLB", "xPxD", default is 1Node',
 )
 parser.add_argument(
     "--model",
     type=str,
     default="/root/.cache/huggingface/DeepSeek-R1",
-    help="Name or path of the model. If not set, the default model will request /v1/models for conf.",
+    help="Name or path of the model. If not set, the default model will request /v1/models for conf. Default is /root/.cache/huggingface/DeepSeek-R1",
 )
 parser.add_argument(
         "--host", type=str, default="0.0.0.0", help="Default host is 0.0.0.0.")
 parser.add_argument(
     "--port",
     type=str,
-    default="8000",
-    help="If not set, the default port is configured according to its default value for different LLM Inference Engines.",
+    default="9000",
+    help="If not set, the default port is configured according to its default value for different LLM Inference Engines. Default is 9000",
 )
 parser.add_argument(
     "--backend",
     type=str,
-    default="sglang-oai",
-    help="sglang-oai, vllm, sglang, ksana, chat",
+    default="sglang-oai-chat",
+    help="sglang-oai, sglang-oai-chat, vllm, sglang, ksana, default is sglang-oai-chat",
 )
 parser.add_argument(
     "--tokenizer",
     type=str,
     default="/root/.cache/huggingface/DeepSeek-R1",
     help="Name or path of the tokenizer. If not set, the default tokenizer will use model value,"
-         "if model start with a pathlike str.",
+         "if model start with a pathlike str. Default is /root/.cache/huggingface/DeepSeek-R1",
 )
 parser.add_argument(
     "--dataset-path",
     type=str,
     default="/root/.cache/huggingface/ShareGPT_V3_unfiltered_cleaned_split.json",
-    help="Path to the dataset."
+    help="Path to the dataset. Default is /root/.cache/huggingface/ShareGPT_V3_unfiltered_cleaned_split.json"
 )
 parser.add_argument(
-    "--dataset-name", type=str, default="random", help="longbenchV2noCtx or longbenchV2withCtx or random"
+    "--dataset-name", type=str, default="random", help="longbenchV2noCtx,longbenchV2withCtx,random,tx; Default is random"
 )
 in_args = parser.parse_args()
 
@@ -193,6 +193,7 @@ for input_len, output_len in tqdm(input_output_pairs, desc="处理输入输出�
             "--random-input", str(input_len),
             "--random-output", str(output_len),
             "--random-range-ratio", "1",
+            "--output-details",
             "--request-rate", str(request_rate),
             "--host", in_args.host,
             "--port", in_args.port,
@@ -203,11 +204,15 @@ for input_len, output_len in tqdm(input_output_pairs, desc="处理输入输出�
             "--output-file", f"{_result_dir}/{result_file_name_prefix}.jsonl",
         ]
 
+        _run_benchmark_failed = False
+
         if in_args.benchmark == "SGLang":
             with open(f"{_result_dir}/{result_file_name_prefix}.txt", "w") as f:
                 process = subprocess.Popen(sglang_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 for line in process.stdout:
                     print(line.strip())  # 打印到终端
+                    if "bench_serving.py: error" in line:
+                        _run_benchmark_failed = line
                     f.write(line)  # 写入文件
                     f.flush()  # 确保实时写入文件
                 process.wait()
@@ -225,7 +230,8 @@ for input_len, output_len in tqdm(input_output_pairs, desc="处理输入输出�
             #     "concurrency": 199.6985092214196,
             #     ...
             # }
-
+            if _run_benchmark_failed:
+                raise ValueError(f"{_run_benchmark_failed}\n command: {sglang_cmd}")
             file_path = f"{_result_dir}/{result_file_name_prefix}.jsonl"
             last_line = None
 
