@@ -191,14 +191,6 @@ async def async_request_openai_completions(
 
     prompt = request_func_input.prompt
 
-    # force set stream_options.include_usage is true when streaming
-    if not args.disable_stream:
-        if "stream_options" in request_func_input.extra_request_body.keys():
-            if "include_usage" not in request_func_input.extra_request_body["stream_options"].keys():
-                request_func_input.extra_request_body["stream_options"]["include_usage"] = True
-        else:
-            request_func_input.extra_request_body["stream_options"] = {"include_usage": True}
-
     async with _create_bench_client_session() as session:
         payload = {
             "model": request_func_input.model,
@@ -229,7 +221,7 @@ async def async_request_openai_completions(
                         if not chunk_bytes:
                             continue
 
-                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:").strip()
                         latency = time.perf_counter() - st
                         if chunk == "[DONE]":
                             pass
@@ -312,14 +304,6 @@ async def async_request_openai_chat_completions(
     else:
         messages = [{"role": "user", "content": request_func_input.prompt}]
 
-        # force set stream_options.include_usage is true when streaming
-        if not args.disable_stream:
-            if "stream_options" in request_func_input.extra_request_body.keys():
-                if "include_usage" not in request_func_input.extra_request_body["stream_options"].keys():
-                    request_func_input.extra_request_body["stream_options"]["include_usage"] = True
-            else:
-                request_func_input.extra_request_body["stream_options"] = {"include_usage": True}
-
     async with _create_bench_client_session() as session:
         payload = {
             "model": request_func_input.model,
@@ -364,7 +348,7 @@ async def async_request_openai_chat_completions(
                             if not chunk_bytes:
                                 continue
 
-                            chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                            chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:").strip()
                             latency = time.perf_counter() - st
                             if chunk == "[DONE]":
                                 pass
@@ -372,7 +356,7 @@ async def async_request_openai_chat_completions(
                                 data = json.loads(chunk)
 
                                 # Check if this chunk contains content
-                                delta = (data.get("choices") or [{}])[0].get("delta", {})
+                                delta = data.get("choices", [{}])[0].get("delta", {})
                                 # reasoning_content add to generated_text
                                 content = delta.get("content", "") or delta.get("reasoning_content", "")
 
