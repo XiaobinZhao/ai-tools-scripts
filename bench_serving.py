@@ -64,6 +64,49 @@ def _create_bench_client_session():
 
 
 @dataclass
+class ServerSentEvent(object):
+
+    def __init__(self, data='', event=None, id=None, retry=None):
+        self.data = data
+        self.event = event
+        self.id = id
+        self.retry = retry
+
+    @classmethod
+    def decode(cls, line):
+        """Decode line to ServerSentEvent
+
+
+        Args:
+            line (str): The line.
+
+        Return:
+            ServerSentEvent (obj:`ServerSentEvent`): The ServerSentEvent object.
+
+        """
+        if not line:
+            return None
+        sse_msg = cls()
+        # format data:xxx
+        field_type, _, field_value = line.partition(':')
+        if field_value.startswith(' '):  # compatible with openai api
+            field_value = field_value[1:]
+        if field_type == 'event':
+            sse_msg.event = field_value
+        elif field_type == 'data':
+            field_value = field_value.rstrip()
+            sse_msg.data = field_value
+        elif field_type == 'id':
+            sse_msg.id = field_value
+        elif field_type == 'retry':
+            sse_msg.retry = field_value
+        else:
+            pass
+
+        return sse_msg
+
+
+@dataclass
 class RequestFuncInput:
     prompt: str
     api_url: str
@@ -348,12 +391,24 @@ async def async_request_openai_chat_completions(
                             if not chunk_bytes:
                                 continue
 
-                            chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:").strip()
+                            chunk_str = chunk_bytes.decode("utf-8")
+                            sse_msg = ServerSentEvent.decode(chunk_str)
+
+                            if not sse_msg:
+                                continue
+
+                            if sse_msg.event == 'error':
+                                output.success = False
+                                output.error = chunk_str
+                                break
+                            if not sse_msg.data:
+                                continue
+
                             latency = time.perf_counter() - st
-                            if chunk == "[DONE]":
+                            if sse_msg.data.startswith('[DONE]'):
                                 pass
                             else:
-                                data = json.loads(chunk)
+                                data = json.loads(sse_msg.data)
 
                                 # Check if this chunk contains content
                                 delta = data.get("choices", [{}])[0].get("delta", {})
@@ -1635,7 +1690,7 @@ async def benchmark(
     else:
         now = datetime.now().strftime("%m%d")
         if args.dataset_name.startswith("random"):
-            output_file_name = f"{args.backend}_{now}_{args.num_prompts}_{args.random_input_len}_{args.random_output_len}.jsonl"
+            output_file_name = f"{args.backend}_{now}_{args.seed}_{args.max_concurrency}_{args.num_prompts}_{args.random_input_len}_{args.random_output_len}.jsonl"
         else:
             output_file_name = f"{args.backend}_{now}_{args.num_prompts}_sharegpt.jsonl"
 
