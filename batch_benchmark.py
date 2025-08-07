@@ -8,11 +8,15 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from tqdm import tqdm
 
+try:
+    import openpyxl
+except ImportError:
+    raise ImportError("Please install openpyxl first. run `pip install openpyxl -i https://mirrors.aliyun.com/pypi/simple/  --trusted-host mirrors.aliyun.com`")
+
 in_params = {
     # 完整random测试参数设置
     "default": {
         "input_output_pairs": [(1024, 256), (1024, 1024), (2048, 2048)],
-        # 并发值设置,有一个1025的目的是为了实现并发和请求数都是1024的case
         "concurrency_values": [1, 16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896, 1024, 1024],
         "num_prompts": [50, 50, 64, 96, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896, 1024, 1280, 1536, 1792, 1024, 2048],
         "random_range_ratio": 0.1
@@ -151,6 +155,7 @@ input_output_pairs = in_params[in_args.mode]["input_output_pairs"]
 concurrency_values = in_params[in_args.mode]["concurrency_values"]
 request_rates_values = in_params[in_args.mode].get("request_rates", [])
 num_prompts = in_params[in_args.mode]["num_prompts"]
+random_range_ratio = in_params[in_args.mode]["random_range_ratio"]
 
 seed = 0
 # 运行 benchmark 测试
@@ -192,7 +197,7 @@ for input_len, output_len in tqdm(input_output_pairs, desc="处理输入输出�
             "--dataset-path", in_args.dataset_path,
             "--random-input", str(input_len),
             "--random-output", str(output_len),
-            "--random-range-ratio", "1",
+            "--random-range-ratio", str(random_range_ratio),
             "--output-details",
             "--request-rate", str(request_rate),
             "--host", in_args.host,

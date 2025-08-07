@@ -64,49 +64,6 @@ def _create_bench_client_session():
 
 
 @dataclass
-class ServerSentEvent(object):
-
-    def __init__(self, data='', event=None, id=None, retry=None):
-        self.data = data
-        self.event = event
-        self.id = id
-        self.retry = retry
-
-    @classmethod
-    def decode(cls, line):
-        """Decode line to ServerSentEvent
-
-
-        Args:
-            line (str): The line.
-
-        Return:
-            ServerSentEvent (obj:`ServerSentEvent`): The ServerSentEvent object.
-
-        """
-        if not line:
-            return None
-        sse_msg = cls()
-        # format data:xxx
-        field_type, _, field_value = line.partition(':')
-        if field_value.startswith(' '):  # compatible with openai api
-            field_value = field_value[1:]
-        if field_type == 'event':
-            sse_msg.event = field_value
-        elif field_type == 'data':
-            field_value = field_value.rstrip()
-            sse_msg.data = field_value
-        elif field_type == 'id':
-            sse_msg.id = field_value
-        elif field_type == 'retry':
-            sse_msg.retry = field_value
-        else:
-            pass
-
-        return sse_msg
-
-
-@dataclass
 class RequestFuncInput:
     prompt: str
     api_url: str
@@ -264,11 +221,16 @@ async def async_request_openai_completions(
                         if not chunk_bytes:
                             continue
 
-                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:").strip()
-                        latency = time.perf_counter() - st
-                        if chunk == "[DONE]":
-                            pass
-                        else:
+                        chunk_bytes = chunk_bytes.decode("utf-8")
+                        # NOTE: SSE comments (often used as pings) start with a colon.
+                        # These are not JSON data payload and should be skipped.
+                        if chunk_bytes.startswith(":"):
+                            continue
+
+                        chunk = chunk_bytes.removeprefix("data:").strip()
+
+                        if chunk != "[DONE]":
+                            latency = time.perf_counter() - st
                             data = json.loads(chunk)
 
                             # NOTE: Some completion API might have a last
@@ -391,24 +353,17 @@ async def async_request_openai_chat_completions(
                             if not chunk_bytes:
                                 continue
 
-                            chunk_str = chunk_bytes.decode("utf-8")
-                            sse_msg = ServerSentEvent.decode(chunk_str)
-
-                            if not sse_msg:
+                            chunk_bytes = chunk_bytes.decode("utf-8")
+                            # NOTE: SSE comments (often used as pings) start with a colon.
+                            # These are not JSON data payload and should be skipped.
+                            if chunk_bytes.startswith(":"):
                                 continue
 
-                            if sse_msg.event == 'error':
-                                output.success = False
-                                output.error = chunk_str
-                                break
-                            if not sse_msg.data:
-                                continue
+                            chunk = chunk_bytes.removeprefix("data:").strip()
 
-                            latency = time.perf_counter() - st
-                            if sse_msg.data.startswith('[DONE]'):
-                                pass
-                            else:
-                                data = json.loads(sse_msg.data)
+                            if chunk != "[DONE]":
+                                latency = time.perf_counter() - st
+                                data = json.loads(chunk)
 
                                 # Check if this chunk contains content
                                 delta = data.get("choices", [{}])[0].get("delta", {})
