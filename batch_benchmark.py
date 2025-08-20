@@ -143,7 +143,7 @@ _tokenizer = in_args.tokenizer or (in_args.model if in_args.model and in_args.mo
 _model_name = in_args.model.split("/")[-1]
 current_time = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d_%H-%M-%S")
 today = datetime.today().date()
-output_file = f"{in_args.engine}_{in_args.gpu}_{in_args.cluster}_{in_args.benchmark}_{_model_name}_{in_args.dataset_name}_{in_args.backend}_benchmark_results_{current_time}.xlsx"
+output_file = f"{in_args.engine}_{in_args.gpu}_{in_args.cluster}_{in_args.benchmark}_{_model_name}_{in_args.mode}_{in_args.dataset_name}_{in_args.backend}_benchmark_results_{current_time}.xlsx"
 _result_dir = f"./logs/{in_args.benchmark}/{in_args.backend}/{today}"
 
 print(f"=== result will save to: ./{output_file} ===")
